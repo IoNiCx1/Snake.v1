@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake - AI Chess Bot</title>
+<style>
+  :root{--light:#f0d9b5;--dark:#b58863;--wp:#ffffff;--bp:#111111;--bsize:520px;
+        --bg:#1e1e24;--card:#2a2a33;--text:#ececf1;--accent:#6ee7a8;--muted:#9a9aa8}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,sans-serif;
+  display:flex;flex-direction:column;align-items:center;padding:14px}
+  h1{margin:6px 0 0;font-size:1.6rem} h1 span{color:var(--accent)} .sub{opacity:.7;margin-bottom:12px;font-size:.9rem}
+  #wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:center;width:100%;max-width:1100px;align-items:flex-start}
+  #left{display:flex;flex-direction:column;gap:10px;align-items:center}
+  #boardwrap{position:relative;width:min(92vw,var(--bsize));height:min(92vw,var(--bsize))}
+  #board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));
+         width:100%;height:100%;border:4px solid #444;border-radius:6px;overflow:hidden}
+  #arrows{position:absolute;inset:4px;width:calc(100% - 8px);height:calc(100% - 8px);pointer-events:none}
+  .sq{display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;user-select:none;
+      min-width:0;min-height:0;overflow:hidden;font-size:calc(min(92vw,var(--bsize)) * .095);line-height:1}
+  .sq.l{background:var(--light)} .sq.d{background:var(--dark)}
+  .sq.sel{outline:4px solid #4da3ff;outline-offset:-4px} .sq.last{box-shadow:inset 0 0 0 100px rgba(255,235,59,.38)}
+  .sq.chk{box-shadow:inset 0 0 0 100px rgba(255,60,60,.5)} .sq.hint{box-shadow:inset 0 0 0 100px rgba(80,200,120,.45)}
+  .sq.tgt::after{content:"";width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.28);position:absolute}
+  .sq.tgt.cap::after{width:88%;height:88%;background:none;border:5px solid rgba(0,0,0,.3)}
+  .w{color:var(--wp);text-shadow:0 0 2px #000,0 0 2px #000,0 0 3px #000} .b{color:var(--bp);text-shadow:0 0 1px #fff,0 0 2px #fff}
+  .coord{position:absolute;font-size:10px;opacity:.7;color:#000;mix-blend-mode:normal} .coord.r{top:2px;left:3px} .coord.f{bottom:1px;right:3px}
+  body.nocoords .coord{display:none}
+  #panel{width:min(92vw,360px);display:flex;flex-direction:column;gap:8px}
+  .card{background:var(--card);border-radius:10px;padding:12px}
+  #status{font-weight:600;min-height:2.4em}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  button{background:var(--accent);color:#102;border:0;border-radius:8px;padding:8px 11px;font-weight:700;cursor:pointer}
+  button.alt{background:#44445a;color:var(--text)} button:disabled{opacity:.5;cursor:wait} button.sm{padding:5px 8px;font-size:.8rem}
+  select,input[type=color]{background:#44445a;color:var(--text);border:0;border-radius:6px;padding:4px}
+  input[type=color]{width:34px;height:26px;padding:0;cursor:pointer} input[type=range]{accent-color:var(--accent);flex:1;min-width:80px}
+  details{background:var(--card);border-radius:10px;padding:8px 12px} summary{cursor:pointer;font-weight:700;padding:2px 0}
+  details[open] summary{margin-bottom:8px}
+  .tag{font-size:.8rem;opacity:.8} label{font-size:.85rem;display:flex;gap:6px;align-items:center;margin-top:5px}
+  .bar{height:14px;background:#111;border-radius:8px;overflow:hidden;border:1px solid #555;margin:5px 0}
+  .fill{height:100%;transition:width .3s} #winfill{background:#6ee7a8} #barfill{background:#f2f2f2;width:50%}
+  .mv{display:flex;align-items:center;gap:6px;font-family:ui-monospace,Menlo,monospace;font-size:.82rem;margin:2px 0}
+  .mv .n{width:54px} .mv .pb{flex:1;height:10px;background:#1b1b22;border-radius:5px;overflow:hidden}
+  .mv .pb i{display:block;height:100%;background:#4da3ff} .mv .p{width:52px;text-align:right}
+  #log,#moves{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;max-height:190px;overflow:auto;background:#222229;border-radius:6px;padding:6px;min-height:40px}
+  .cm{padding:3px 4px;border-left:3px solid #666;margin:2px 0} .cm.best{border-color:#6ee7a8} .cm.good{border-color:#9be38a}
+  .cm.inaccuracy{border-color:#f2d45c} .cm.mistake{border-color:#f29a4a} .cm.blunder{border-color:#ff5a5a;background:#3a2226}
+  .cm .who{opacity:.75} .cm .d{opacity:.7} .cm .conf{color:#8fc3ff}
+  .mood{display:flex;gap:10px;width:100%;justify-content:space-between}
+  .mood div{flex:1;background:var(--card);border-radius:10px;padding:6px 10px;font-size:.85rem;min-height:44px}
+  .mood b{display:block;font-size:.72rem;opacity:.7;font-weight:600}
+  #palette{display:none;gap:4px;flex-wrap:wrap;justify-content:center;background:var(--card);border-radius:10px;padding:8px;max-width:var(--bsize)}
+  #palette button{width:38px;height:38px;padding:0;font-size:1.5rem;background:#44445a;color:#fff} #palette button.on{outline:3px solid var(--accent)}
+  #palette button.wp{color:var(--wp);text-shadow:0 0 2px #000,0 0 3px #000} #palette button.bp{color:var(--bp);text-shadow:0 0 2px #fff}
+  .ctl{margin:6px 0} .ctl .h{font-size:.72rem;opacity:.6} .ctl .top{display:flex;justify-content:space-between;font-size:.82rem}
+  .gh{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.55;margin:10px 0 2px}
+  .msg{font-size:.8rem;color:#ffb4b4;min-height:1em}
+</style></head><body>
+<h1>&#128013; <span>Snake</span> - AI Chess Bot</h1>
+<div class="sub">A neural network that keeps learning - from Stockfish and from every game you play</div>
+<div id="wrap">
+  <div id="left">
+    <div id="boardwrap"><div id="board"></div>
+      <svg id="arrows" viewBox="0 0 8 8"></svg></div>
+    <div id="palette"></div>
+    <div class="mood" id="moods">
+      <div><b>&#128013; SNAKE</b><span id="moodSnake">&mdash;</span></div>
+      <div id="moodSFbox"><b id="moodSFname">STOCKFISH</b><span id="moodSF">&mdash;</span></div>
+    </div>
+  </div>
+  <div id="panel">
+    <div class="card">
+      <div id="status">Loading...</div>
+      <div class="tag" id="info"></div>
+      <div id="sfbox" style="display:none">
+        <label>Mode:&nbsp;<select id="mode" onchange="startNew()">
+          <option value="human">You vs Snake</option>
+          <option value="humansf">You vs Stockfish</option>
+          <option value="spectate">Watch: Snake vs Stockfish</option></select></label>
+        <label>Stockfish level: <b id="lvlv">3</b>
+          <input type="range" id="lvl" min="0" max="20" value="3" oninput="$('lvlv').textContent=this.value"></label>
+        <label id="snakewhiteRow"><input type="checkbox" id="snakewhite" checked> Snake plays White (watch mode)</label>
+      </div>
+      <div class="row" id="playbtns">
+        <button onclick="newGame('white')">Play White</button>
+        <button onclick="newGame('black')" class="alt">Play Black</button>
+      </div>
+      <div class="row" id="watchbtns" style="display:none">
+        <button onclick="startWatch()">Start match</button>
+        <button id="pausebtn" onclick="togglePause()" class="alt">Pause</button>
+        <button onclick="stepOne()" class="alt">Step</button>
+      </div>
+      <label id="speedRow" style="display:none">Speed: <input type="range" id="speed" min="0" max="2500" value="500"></label>
+      <label><input type="checkbox" id="look" checked> Smart mode (mate-in-1 + 1-ply lookahead)</label>
+      <div class="tag" id="stats" style="margin-top:6px"></div>
+    </div>
+
+    <details open id="mindbox"><summary>&#129504; Snake's mind (prediction)</summary>
+      <div class="tag" id="mindtitle">-</div>
+      <div class="bar"><div class="fill" id="winfill" style="width:50%"></div></div>
+      <div class="tag" id="wintext"></div>
+      <div id="mindmoves"></div>
+      <label><input type="checkbox" id="arrowsOn" checked onchange="drawArrows()"> Draw Snake's top moves as arrows</label>
+    </details>
+
+    <details open id="sfdetails" style="display:none"><summary>&#9889; Stockfish eval &amp; commentary</summary>
+      <label><input type="checkbox" id="evalon" onchange="refreshAll()"> Evaluation bar</label>
+      <div class="bar"><div class="fill" id="barfill"></div></div><div class="tag" id="evaltxt"></div>
+      <label><input type="checkbox" id="hinton" onchange="refreshAll()"> Show Stockfish's best-move hint (green)</label>
+      <label><input type="checkbox" id="commenton" checked onchange="refreshAll()"> Live commentary (how good was each move?)</label>
+      <div id="log"><i>Commentary appears here.</i></div>
+    </details>
+
+    <details id="lab"><summary>&#127912; Board lab (customise)</summary>
+      <div class="row"><label style="margin:0">Theme:&nbsp;<select id="preset" onchange="applyPreset(this.value)"></select></label>
+        <button class="sm alt" onclick="resetTheme()">Reset</button></div>
+      <div class="row">
+        <label style="margin:0">Light <input type="color" id="cLight" oninput="themeChanged()"></label>
+        <label style="margin:0">Dark <input type="color" id="cDark" oninput="themeChanged()"></label>
+        <label style="margin:0">White pcs <input type="color" id="cWp" oninput="themeChanged()"></label>
+        <label style="margin:0">Black pcs <input type="color" id="cBp" oninput="themeChanged()"></label>
+      </div>
+      <label>Size <input type="range" id="bsize" min="260" max="760" value="520" oninput="themeChanged()"></label>
+      <label><input type="checkbox" id="coordsOn" checked onchange="themeChanged()"> Show coordinates</label>
+      <div class="gh">Set up your own position</div>
+      <div class="row"><button class="sm" onclick="toggleEditor()" id="edbtn">Edit position</button>
+        <button class="sm alt" onclick="standardStart()">Standard start</button></div>
+      <div id="edtools" style="display:none">
+        <div class="row">
+          <label style="margin:0">Side to move <select id="edTurn"><option value="w">White</option><option value="b">Black</option></select></label>
+        </div>
+        <div class="row"><label style="margin:0"><input type="checkbox" id="edK" checked>K</label>
+          <label style="margin:0"><input type="checkbox" id="edQ" checked>Q</label>
+          <label style="margin:0"><input type="checkbox" id="edk" checked>k</label>
+          <label style="margin:0"><input type="checkbox" id="edq" checked>q</label>
+          <span class="tag">castling</span></div>
+        <div class="row"><button class="sm alt" onclick="edClear()">Clear board</button>
+          <button class="sm alt" onclick="edReset()">Reset pieces</button>
+          <button class="sm" onclick="edUse()">Use this position</button></div>
+        <div class="tag">Pick a piece, click squares to place it (right-click or eraser removes). Then choose a mode and start.</div>
+        <div class="msg" id="edmsg"></div>
+      </div>
+    </details>
+
+    <details id="learnbox" style="display:none"><summary>&#128218; Learning lab (Snake studies its games)</summary>
+      <div class="tag" id="learnmsg">Snake is resting.</div>
+      <div class="bar"><div class="fill" id="learnfill" style="width:0;background:#4da3ff"></div></div>
+      <div class="tag" id="learnres"></div>
+      <div class="row"><button class="sm" id="studybtn" onclick="studyNow(true)">Study this game now</button></div>
+      <div id="learnctl"></div>
+    </details>
+
+    <details open><summary>Moves</summary><div id="moves"></div></details>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const GLYPH={k:"\u265A\uFE0E",q:"\u265B\uFE0E",r:"\u265C\uFE0E",b:"\u265D\uFE0E",n:"\u265E\uFE0E",p:"\u265F\uFE0E"};
+const STD_FEN="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+let moves=[], startFen=null, st=null, me="white", sel=null, busy=false, watching=false, paused=false, stepFlag=false;
+let caps={stockfish:false,learning:false}, evals={}, minds={}, annotated=new Set(), hintSq=null;
+let gameId=0, runId=0, studiedKey=null, learnCfg=[], learnTimer=null;
+let editor={on:false,piece:"P",grid:{}};
+const mode=()=>caps.stockfish?$("mode").value:"human", lvl=()=>+$("lvl").value;
+
+/* ---------------- themes ---------------- */
+const PRESETS={
+  "Classic wood":{light:"#f0d9b5",dark:"#b58863",wp:"#ffffff",bp:"#111111"},
+  "Ocean":{light:"#cfe8f3",dark:"#4a8db7",wp:"#ffffff",bp:"#0b2239"},
+  "Neon night":{light:"#2b2b5a",dark:"#14142e",wp:"#00ffd5",bp:"#ff3df2"},
+  "Matrix":{light:"#0f3a14",dark:"#06200a",wp:"#9dff6b",bp:"#2fbf4a"},
+  "Bubblegum":{light:"#ffd1e8",dark:"#ff8fc7",wp:"#ffffff",bp:"#5b2a86"},
+  "Ice":{light:"#e6f2ff",dark:"#9db9d6",wp:"#ffffff",bp:"#233a52"},
+  "Sunset":{light:"#ffe0b3",dark:"#e0704a",wp:"#fff7e6",bp:"#4a1c1c"},
+  "Mono":{light:"#e8e8e8",dark:"#8a8a8a",wp:"#ffffff",bp:"#000000"}};
+function applyColors(t){const s=document.documentElement.style;s.setProperty("--light",t.light);s.setProperty("--dark",t.dark);
+  s.setProperty("--wp",t.wp);s.setProperty("--bp",t.bp);}
+function readTheme(){return {light:$("cLight").value,dark:$("cDark").value,wp:$("cWp").value,bp:$("cBp").value,
+  size:+$("bsize").value,coords:$("coordsOn").checked};}
+function writeTheme(t){$("cLight").value=t.light;$("cDark").value=t.dark;$("cWp").value=t.wp;$("cBp").value=t.bp;
+  if(t.size)$("bsize").value=t.size; if(t.coords!==undefined)$("coordsOn").checked=t.coords;}
+function themeChanged(){const t=readTheme();applyColors(t);document.documentElement.style.setProperty("--bsize",t.size+"px");
+  document.body.classList.toggle("nocoords",!t.coords);try{localStorage.setItem("snakeTheme",JSON.stringify(t))}catch(e){}}
+function applyPreset(n){if(PRESETS[n]){writeTheme(PRESETS[n]);themeChanged();}}
+function resetTheme(){writeTheme(Object.assign({size:520,coords:true},PRESETS["Classic wood"]));$("preset").value="Classic wood";themeChanged();}
+function initTheme(){
+  const p=$("preset"); Object.keys(PRESETS).forEach(n=>{const o=document.createElement("option");o.textContent=n;p.appendChild(o)});
+  let t=null; try{t=JSON.parse(localStorage.getItem("snakeTheme")||"null")}catch(e){}
+  writeTheme(t||Object.assign({size:520,coords:true},PRESETS["Classic wood"])); themeChanged();
+}
+
+/* ---------------- helpers ---------------- */
+async function api(path, body){
+  const r=await fetch(path,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||"error"); return j;
+}
+const call=(path,extra)=>api(path,Object.assign({moves,start_fen:startFen},extra||{}));
+function parseFen(fen){
+  const g={}; fen.split(" ")[0].split("/").forEach((row,i)=>{let f=0;for(const ch of row){if(/\d/.test(ch)){f+=+ch}else{g["abcdefgh"[f]+(8-i)]=ch;f++}}});
+  return g;
+}
+function sqXY(s){const f="abcdefgh".indexOf(s[0]), r=+s[1];
+  return {x:(me==="white"?f:7-f)+.5, y:(me==="white"?8-r:r-1)+.5};}
+const clip=x=>Math.max(-1000,Math.min(1000,x));
+const winPctFromCp=cp=>50+50*Math.tanh(cp/400);
+const fmtCp=e=>e.mate!==null&&e.mate!==undefined?`mate in ${Math.abs(e.mate)} for ${e.mate>0?"White":"Black"}`:((e.cp>=0?"+":"")+(e.cp/100).toFixed(2));
+const why=t=>(t||"").toLowerCase().replace(/_/g," ");
+
+/* ---------------- board rendering ---------------- */
+function render(){
+  if(!st&&!editor.on) return;
+  const g=editor.on?editor.grid:parseFen(st.fen), last=(!editor.on&&moves.length)?moves[moves.length-1]:null, el=$("board");
+  el.innerHTML="";
+  const files=me==="white"?"abcdefgh":"hgfedcba", ranks=me==="white"?[8,7,6,5,4,3,2,1]:[1,2,3,4,5,6,7,8];
+  const targets=(!editor.on&&sel&&st.legal[sel])?st.legal[sel]:[];
+  ranks.forEach((r,ri)=>files.split("").forEach((f,fi)=>{
+    const s=f+r, d=document.createElement("div"), light=("abcdefgh".indexOf(f)+r)%2===0;   // a1 is DARK
+    d.className="sq "+(light?"l":"d"); d.dataset.sq=s;
+    if(!editor.on){
+      if(s===sel)d.classList.add("sel");
+      if(last&&(s===last.slice(0,2)||s===last.slice(2,4)))d.classList.add("last");
+      if(hintSq&&(s===hintSq[0]||s===hintSq[1]))d.classList.add("hint");
+      if(targets.includes(s)){d.classList.add("tgt");if(g[s])d.classList.add("cap")}
+    }
+    const p=g[s];
+    if(p){ if(!editor.on&&p.toLowerCase()==="k"&&st.in_check&&((p===p.toUpperCase())===(st.turn==="white")))d.classList.add("chk");
+      d.innerHTML=`<span class="${p===p.toUpperCase()?"w":"b"}">${GLYPH[p.toLowerCase()]}</span>`;}
+    if(fi===0){const c=document.createElement("span");c.className="coord r";c.textContent=r;d.appendChild(c)}
+    if(ri===7){const c=document.createElement("span");c.className="coord f";c.textContent=f;d.appendChild(c)}
+    d.onclick=()=>clickSq(s); d.oncontextmenu=e=>{e.preventDefault(); if(editor.on){delete editor.grid[s];render();}};
+    el.appendChild(d);
+  }));
+  if(editor.on){ $("status").textContent="Editing position - place pieces, then press 'Use this position'.";
+    $("info").textContent=""; drawArrows(); return; }
+  const m=mode(), opp=m==="humansf"?"Stockfish":"Snake";
+  let txt;
+  if(m==="spectate"){
+    const sw=$("snakewhite").checked, nm=c=>(c==="white")===sw?"Snake":`Stockfish L${lvl()}`;
+    if(st.over) txt=st.result==="1/2-1/2"?`Draw (${why(st.termination)})`:`${nm(st.winner)} (${st.winner}) wins by ${why(st.termination)}`;
+    else txt=paused?"Paused":`${nm(st.turn)} (${st.turn}) is thinking...`;
+  } else if(st.over){
+    txt=st.result==="1/2-1/2"?`Draw (${why(st.termination)})`:
+      `${st.winner==="white"?"White":"Black"} wins by ${why(st.termination)}`+((st.winner===me)?" - you win!":` - ${opp} wins`);
+  } else txt=st.turn===me?"Your move"+(st.in_check?" (you are in check!)":""):`${opp} is thinking...`;
+  $("status").textContent=txt;
+  $("info").textContent=`Opening: ${st.info.opening} | Phase: ${st.info.phase} | Move ${Math.floor(st.info.ply/2)+1}`;
+  const san=st.san||[]; let h="";
+  for(let i=0;i<san.length;i+=2)h+=`${i/2+1}. ${san[i]} ${san[i+1]||""}<br>`;
+  const mv=$("moves"); mv.innerHTML=h||"<i>No moves yet</i>"; mv.scrollTop=mv.scrollHeight;
+  const spec=m==="spectate";
+  $("playbtns").style.display=spec?"none":"flex"; $("watchbtns").style.display=spec?"flex":"none";
+  $("snakewhiteRow").style.display=spec?"flex":"none"; $("speedRow").style.display=spec?"flex":"none";
+  $("moodSFname").textContent=m==="human"?"YOU":("STOCKFISH");
+  $("studybtn").disabled=moves.length<2;
+  drawArrows();
+}
+
+/* ---------------- Snake's mind: percentages + arrows ---------------- */
+async function refreshMind(){
+  if(!st||st.over||editor.on){ if(st&&st.over){$("mindtitle").textContent="Game over.";$("mindmoves").innerHTML="";$("wintext").textContent="";} return; }
+  const ply=moves.length, gid=gameId;
+  try{ const m=await call("/api/predict"); if(gid!==gameId)return; minds[ply]=m; if(ply===moves.length)renderMind(); }catch(e){}
+}
+function renderMind(){
+  const ply=moves.length, m=minds[ply]; if(!m||!st||st.over)return;
+  $("mindtitle").textContent=`${m.turn==="white"?"White":"Black"} to move - Snake's view of ${m.moves.length>=8?"the top 8":"all"} moves:`;
+  $("winfill").style.width=m.win_pct+"%";
+  let t=`Snake expects ${m.turn} to score ${m.win_pct.toFixed(1)}%`;
+  const e=evals[ply]; if(e){ const w=winPctFromCp(clip(e.cp)), side=m.turn==="white"?w:100-w; t+=` | Stockfish: ${side.toFixed(1)}%`; }
+  $("wintext").textContent=t;
+  const mx=Math.max(...m.moves.map(x=>x.pct),1);
+  $("mindmoves").innerHTML=m.moves.map(x=>`<div class="mv"><span class="n">${x.san}</span><span class="pb"><i style="width:${(x.pct/mx*100).toFixed(0)}%"></i></span><span class="p">${x.pct.toFixed(1)}%</span></div>`).join("");
+  drawArrows();
+}
+function drawArrows(){
+  const svg=$("arrows"); svg.innerHTML="";
+  if(!$("arrowsOn").checked||editor.on||!st||st.over) return;
+  const m=minds[moves.length]; if(!m) return;
+  const cols=["#38e08c","#4da3ff","#ffb347"];
+  let defs="<defs>"+cols.map((c,i)=>`<marker id="ah${i}" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")+"</defs>";
+  let body="";
+  m.moves.slice(0,3).forEach((x,i)=>{
+    const a=sqXY(x.uci.slice(0,2)), b=sqXY(x.uci.slice(2,4)), dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, sh=.3;
+    body+=`<line x1="${a.x}" y1="${a.y}" x2="${b.x-dx/len*sh}" y2="${b.y-dy/len*sh}" stroke="${cols[i]}" stroke-width="${(.1+x.pct/100*.22).toFixed(3)}" stroke-linecap="round" opacity="${(.4+x.pct/100*.55).toFixed(2)}" marker-end="url(#ah${i})"/>`;
+  });
+  svg.innerHTML=defs+body;
+}
+
+/* ---------------- Stockfish eval, hints, commentary ---------------- */
+const evalWanted=()=>caps.stockfish&&($("evalon").checked||$("commenton").checked||$("hinton").checked||mode()==="spectate");
+async function ensureEval(n){
+  if(!caps.stockfish) return null;
+  if(evals[n]!==undefined) return evals[n];
+  if(n===moves.length&&st&&st.over){ evals[n]={cp:st.winner?(st.winner==="white"?10000:-10000):0,mate:null}; return evals[n]; }
+  const gid=gameId;
+  try{ const e=await api("/api/eval",{moves:moves.slice(0,n),start_fen:startFen}); if(gid!==gameId)return null; evals[n]=e; return e; }catch(err){ return null; }
+}
+async function ensureMind(n){
+  if(minds[n]) return minds[n]; const gid=gameId;
+  try{ const m=await api("/api/predict",{moves:moves.slice(0,n),start_fen:startFen}); if(gid!==gameId)return null; minds[n]=m; return m; }catch(e){ return null; }
+}
+async function refreshEvalBar(){
+  hintSq=null; const n=moves.length, gid=gameId;
+  if(!evalWanted()||!st){ $("evaltxt").textContent=""; $("barfill").style.width="50%"; render(); return; }
+  const e=await ensureEval(n); if(!e||gid!==gameId||n!==moves.length) return;
+  $("barfill").style.width=winPctFromCp(clip(e.cp))+"%";
+  const humanTurn=mode()!=="spectate"&&!st.over&&st.turn===me;
+  $("evaltxt").textContent=`Eval (White's view): ${fmtCp(e)}`+(humanTurn&&e.best_san&&$("hinton").checked?` | Stockfish suggests: ${e.best_san}`:"");
+  hintSq=(humanTurn&&$("hinton").checked&&e.best)?[e.best.slice(0,2),e.best.slice(2,4)]:null;
+  render(); renderMind();
+}
+function moverOf(n){ const opp=c=>c==="white"?"black":"white"; return ((moves.length-n)%2===0)?opp(st.turn):st.turn; }
+function whoIs(color){
+  const m=mode(); if(m==="spectate") return (color==="white")===$("snakewhite").checked?"Snake":"Stockfish";
+  if(m==="humansf") return color===me?"You":"Stockfish";
+  return color===me?"You":"Snake";
+}
+const MOVER_FACE={best:"&#128526;",good:"&#128578;",inaccuracy:"&#128517;",mistake:"&#128556;",blunder:"&#128165;&#128565;"};
+const OTHER_FACE={best:"&#128558;",good:"&#129300;",inaccuracy:"&#128578;",mistake:"&#128527;",blunder:"&#129325;&#129395;"};
+const SAYS={Snake:{mistake:["Hmm, ssso that was a slip.","Hsss... noted."],blunder:["Ouch. I felt that in my weights."]},
+  Stockfish:{mistake:["I'll take that.","Interesting choice..."],blunder:["Thanks for the gift.","Is that all you've got?"]}};
+function react(who,cls,other){
+  const set=(name,html)=>{ if(name==="Snake")$("moodSnake").innerHTML=html; else if(name==="Stockfish")$("moodSF").innerHTML=html;
+    else if(name==="You"&&mode()==="human")$("moodSF").innerHTML=html; };
+  const lines=(SAYS[other]||{})[cls]; const say=lines?" "+lines[Math.floor(Math.random()*lines.length)]:"";
+  set(who,MOVER_FACE[cls]+` <span class="tag">${cls}</span>`);
+  set(other==="Stockfish"&&mode()==="human"?"You":other,OTHER_FACE[cls]+say);
+}
+async function annotateAll(){
+  if(!caps.stockfish||!$("commenton").checked||!st) return;
+  const gid=gameId;
+  for(let n=1;n<=moves.length;n++){
+    if(annotated.has(n)) continue;
+    const b=await ensureEval(n-1), a=await ensureEval(n); if(gid!==gameId) return; if(!b||!a) continue;
+    const mind=await ensureMind(n-1); if(gid!==gameId) return;
+    if(annotated.has(n)) continue; annotated.add(n);
+    const color=moverOf(n), loss=color==="white"?clip(b.cp)-clip(a.cp):clip(a.cp)-clip(b.cp), L=Math.max(0,loss);
+    const cls=L<=10?"best":L<=50?"good":L<=100?"inaccuracy":L<=250?"mistake":"blunder";
+    const who=whoIs(color), other=whoIs(color==="white"?"black":"white");
+    const pct=mind&&mind.all[moves[n-1]]!==undefined?mind.all[moves[n-1]].toFixed(1)+"%":"-";
+    const lg=$("log"); if(lg.querySelector("i")) lg.innerHTML="";
+    const d=document.createElement("div"); d.className="cm "+cls;
+    d.innerHTML=`<b>${Math.ceil(n/2)}${color==="white"?".":"..."} ${st.san[n-1]}</b> <span class="who">${who}</span> ${MOVER_FACE[cls]} ${cls} <span class="d">(${L>0?"-":"+"}${Math.abs(loss)}cp)</span> <span class="conf">Snake rated it ${pct}</span>`;
+    lg.appendChild(d); lg.scrollTop=lg.scrollHeight;
+    react(who,cls,other);
+  }
+}
+function refreshAll(){ refreshMind(); refreshEvalBar().then(()=>annotateAll()); }
+
+/* ---------------- game flow ---------------- */
+function resetGame(){ gameId++; evals={}; minds={}; annotated=new Set(); hintSq=null; studiedKey=null; sel=null;
+  $("log").innerHTML="<i>Commentary appears here.</i>"; $("moodSnake").innerHTML="&mdash;"; $("moodSF").innerHTML="&mdash;";
+  $("mindmoves").innerHTML=""; $("arrows").innerHTML=""; }
+async function clickSq(s){
+  if(editor.on){ if(editor.piece==="x")delete editor.grid[s]; else editor.grid[s]=editor.piece; render(); return; }
+  if(busy||!st||st.over||st.turn!==me||mode()==="spectate")return;
+  const g=parseFen(st.fen);
+  if(sel&&st.legal[sel]&&st.legal[sel].includes(s)){
+    const uci=sel+s; sel=null; hintSq=null; busy=true;
+    try{
+      st=await call("/api/move",{move:uci,lookahead:$("look").checked,opponent:mode()==="humansf"?"stockfish":"snake",level:lvl()});
+      moves=st.moves;
+    }catch(e){alert(e.message)}
+    busy=false; render(); refreshAll(); loadStats(); if(st.over)maybeStudy(); return;
+  }
+  sel=(g[s]&&st.legal[s])?s:null; render();
+}
+async function opponentMove(){
+  const body={lookahead:$("look").checked,level:lvl()};
+  return mode()==="humansf"?call("/api/sf_move",body):call("/api/snake",body);
+}
+async function newGame(color){
+  runId++; watching=false; paused=false; resetGame(); moves=[]; me=color; busy=true;
+  st=await call("/api/state"); moves=st.moves; render();
+  if(st.turn!==me&&!st.over){ try{ st=await opponentMove(); moves=st.moves; }catch(e){alert(e.message)} }
+  busy=false; render(); refreshAll();
+}
+function startNew(){ $("mode").value==="spectate"?startWatch():newGame("white"); }
+function togglePause(){ paused=!paused; $("pausebtn").textContent=paused?"Resume":"Pause"; if(st)render(); }
+function stepOne(){ paused=true; stepFlag=true; $("pausebtn").textContent="Resume"; }
+async function startWatch(){
+  const my=++runId; resetGame(); paused=false; $("pausebtn").textContent="Pause";
+  moves=[]; const sw=$("snakewhite").checked; me=sw?"white":"black"; busy=true;
+  st=await call("/api/state"); moves=st.moves; render(); watching=true; refreshAll();
+  while(my===runId&&!st.over){
+    if(paused&&!stepFlag){ await sleep(80); continue; }
+    stepFlag=false;
+    const snakeTurn=(st.turn==="white")===sw;
+    try{
+      await refreshMind();                                    // Snake's thoughts about THIS position, before the move
+      if(my!==runId) return;
+      st=await call(snakeTurn?"/api/snake":"/api/sf_move",{lookahead:$("look").checked,level:lvl()}); moves=st.moves;
+    }catch(e){ alert(e.message); break; }
+    if(my!==runId) return;
+    render(); refreshAll(); loadStats();
+    await sleep(+$("speed").value);
+  }
+  if(my===runId){ watching=false; busy=false; render(); if(st.over)maybeStudy(); }
+}
+
+/* ---------------- board editor ---------------- */
+function buildPalette(){
+  const p=$("palette"); p.innerHTML="";
+  "KQRBNPkqrbnp".split("").forEach(ch=>{const b=document.createElement("button");
+    b.className=(ch===ch.toUpperCase()?"wp":"bp"); b.innerHTML=GLYPH[ch.toLowerCase()]; b.title=ch; b.dataset.p=ch;
+    b.onclick=()=>{editor.piece=ch;markPalette()}; p.appendChild(b)});
+  const e=document.createElement("button"); e.textContent="\u2715"; e.title="eraser"; e.dataset.p="x"; e.onclick=()=>{editor.piece="x";markPalette()}; p.appendChild(e);
+  markPalette();
+}
+function markPalette(){ document.querySelectorAll("#palette button").forEach(b=>b.classList.toggle("on",b.dataset.p===editor.piece)); }
+function toggleEditor(){
+  editor.on=!editor.on; runId++; watching=false;
+  $("palette").style.display=editor.on?"flex":"none"; $("edtools").style.display=editor.on?"block":"none";
+  $("edbtn").textContent=editor.on?"Close editor":"Edit position"; $("edmsg").textContent="";
+  if(editor.on){ editor.grid=parseFen(st?st.fen:STD_FEN); me="white"; $("edTurn").value=(st&&st.turn==="black")?"b":"w"; }
+  render();
+}
+function edClear(){ editor.grid={}; render(); }
+function edReset(){ editor.grid=parseFen(STD_FEN); render(); }
+function editorFen(){
+  const rows=[]; for(let r=8;r>=1;r--){ let row="",e=0;
+    for(const f of "abcdefgh"){ const p=editor.grid[f+r]; if(p){ if(e){row+=e;e=0} row+=p; } else e++; }
+    if(e)row+=e; rows.push(row); }
+  const c=(["K","Q","k","q"].filter(x=>$("ed"+x).checked)).join("")||"-";
+  return rows.join("/")+" "+$("edTurn").value+" "+c+" - 0 1";
+}
+async function edUse(){
+  try{
+    const v=await api("/api/validate_fen",{fen:editorFen()});
+    if(!v.ok){ $("edmsg").textContent="Not a legal position: "+v.problems.join(", "); return; }
+    startFen=(v.fen===STD_FEN)?null:v.fen; toggleEditor(); startNew();
+  }catch(e){ $("edmsg").textContent=e.message; }
+}
+function standardStart(){ startFen=null; if(editor.on)toggleEditor(); startNew(); }
+
+/* ---------------- learning lab ---------------- */
+const snakeColor=()=>mode()==="spectate"?($("snakewhite").checked?"white":"black"):mode()==="humansf"?"none":(me==="white"?"black":"white");
+const autoStudy=()=>{const c=learnCfg.find(x=>x.name==="auto_study");return c?c.value:false};
+async function maybeStudy(){
+  if(!caps.learning||!st||!st.over) return;
+  const key=(startFen||"")+"|"+moves.join(" "); if(studiedKey===key) return;
+  if(autoStudy()){ studiedKey=key; studyNow(false); }
+}
+async function studyNow(manual){
+  if(!caps.learning||moves.length<2) return;
+  try{ const r=await call("/api/learn",{snake_color:snakeColor()});
+    if(!r.queued){ $("learnmsg").textContent=r.reason||"Not queued."; return; }
+    $("learnbox").open=true; pollLearn(); }catch(e){ $("learnmsg").textContent=e.message; }
+}
+function pollLearn(){ if(learnTimer)return; const tick=async()=>{
+    try{ const s=await api("/api/learn_status"); $("learnmsg").textContent=s.message+(s.queue?` (+${s.queue} queued)`:"");
+      $("learnfill").style.width=(s.total?Math.min(100,s.progress/s.total*100):0)+"%";
+      if(s.error) $("learnres").textContent=s.error.split("\n").slice(-3).join(" ");
+      else if(s.last){ const l=s.last; $("learnres").innerHTML=`Last study: ${l.positions} positions, ${l.punished} dumb moves punished, ${l.rewarded} rewarded, `
+        +`avg eval change per Snake move ${l.avg_delta_cp===null?"-":l.avg_delta_cp+"cp"}, agreement with Stockfish ${l.agree_before}% &rarr; <b>${l.agree_after}%</b>, `
+        +`${l.steps} gradient steps (total ${l.train_steps_total}).`; }
+      if(s.state==="done"||s.state==="idle"||s.state==="error"){ clearInterval(learnTimer); learnTimer=null; loadStats(); }
+    }catch(e){ clearInterval(learnTimer); learnTimer=null; } };
+  learnTimer=setInterval(tick,900); tick(); }
+async function buildLearn(){
+  try{ learnCfg=await api("/api/learn_config"); }catch(e){ return; }
+  const box=$("learnctl"); box.innerHTML=""; let lastGroup="";
+  learnCfg.forEach(c=>{
+    const grp=c.name.startsWith("loss.")?"Loss function":"Study session";
+    if(grp!==lastGroup){ const h=document.createElement("div"); h.className="gh"; h.textContent=grp; box.appendChild(h); lastGroup=grp; }
+    const d=document.createElement("div"); d.className="ctl"; let inp, valEl=null;
+    const top=document.createElement("div"); top.className="top"; const lab=document.createElement("span"); lab.textContent=c.label; top.appendChild(lab);
+    if(c.type==="bool"){ inp=document.createElement("input"); inp.type="checkbox"; inp.checked=c.value; top.appendChild(inp); d.appendChild(top); }
+    else if(c.type==="select"){ inp=document.createElement("select"); c.options.forEach(o=>{const op=document.createElement("option");op.textContent=o;inp.appendChild(op)}); inp.value=c.value; top.appendChild(inp); d.appendChild(top); }
+    else { valEl=document.createElement("b"); valEl.textContent=c.value; top.appendChild(valEl); d.appendChild(top);
+      inp=document.createElement("input"); inp.type="range"; inp.min=c.min; inp.max=c.max; inp.step=c.step; inp.value=c.value; d.appendChild(inp);
+      inp.oninput=()=>{valEl.textContent=inp.value}; }
+    if(c.help){ const h=document.createElement("div"); h.className="h"; h.textContent=c.help; d.appendChild(h); }
+    inp.name=c.name;
+    inp.onchange=async()=>{ const v=c.type==="bool"?inp.checked:inp.value;
+      try{ const r=await api("/api/learn_config",{name:c.name,value:v}); c.value=r.value; if(valEl)valEl.textContent=r.value; }catch(e){ alert(e.message); } };
+    box.appendChild(d);
+  });
+}
+async function loadStats(){
+  try{const s=await api("/api/stats"); $("stats").textContent=
+    `Snake (${s.arch}): ${s.train_steps} training steps | ${s.games} live-training games | ${s.web_games} website games studied | Stockfish level ${s.sf_level}.`}catch(e){}
+}
+
+/* ---------------- boot ---------------- */
+(async()=>{
+  initTheme(); buildPalette();
+  try{ caps=await api("/api/capabilities"); }catch(e){}
+  if(caps.stockfish){ $("sfbox").style.display="block"; $("sfdetails").style.display="block"; }
+  if(caps.learning){ $("learnbox").style.display="block"; await buildLearn(); }
+  if(!caps.stockfish){ $("moodSFbox").style.display="none"; }
+  await newGame("white"); loadStats();
+})();
+</script></body></html>

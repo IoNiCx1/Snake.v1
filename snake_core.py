@@ -2,10 +2,11 @@
 snake_core.py  -  the "brain" of Snake
   * board encoding + move encoding (side-to-move perspective)
   * legal-move identifier (masking)
-  * SnakeNet (policy + value network, PyTorch)
+  * SnakeNet (ResNet) and SnakeTransformer - two interchangeable policy+value networks (PyTorch)
   * SnakeAgent (move selection, save / load)
   * identify_game (opening / phase / termination detector)
 """
+import math
 import threading
 import numpy as np
 import chess
@@ -107,16 +108,51 @@ class SnakeNet(nn.Module):
         return self.policy(h), self.value(h).squeeze(-1)
 
 
+class SnakeTransformer(nn.Module):
+    """
+    Transformer variant: every square is a token (64 tokens). Self-attention lets squares
+    "talk" to each other. The policy is a from-square x to-square attention map (4096 logits),
+    the value comes from the mean-pooled tokens.
+    """
+    def __init__(self, d_model=96, layers=4, heads=4):
+        super().__init__()
+        assert d_model % heads == 0, "channels (d_model) must be divisible by heads"
+        self.d = d_model
+        self.embed = nn.Linear(N_PLANES, d_model)
+        self.pos = nn.Parameter(torch.randn(1, 64, d_model) * 0.02)
+        layer = nn.TransformerEncoderLayer(d_model, heads, dim_feedforward=d_model * 4, dropout=0.0,
+                                           batch_first=True, norm_first=True)
+        self.enc = nn.TransformerEncoder(layer, layers, enable_nested_tensor=False)
+        self.norm = nn.LayerNorm(d_model)
+        self.q = nn.Linear(d_model, d_model)
+        self.k = nn.Linear(d_model, d_model)
+        self.value = nn.Sequential(nn.Linear(d_model, 64), nn.ReLU(), nn.Linear(64, 1), nn.Tanh())
+
+    def forward(self, x):                                   # x: B x 18 x 8 x 8
+        t = x.flatten(2).transpose(1, 2)                    # B x 64 x 18  (token index = square)
+        h = self.norm(self.enc(self.embed(t) + self.pos))
+        logits = (self.q(h) @ self.k(h).transpose(1, 2)) / math.sqrt(self.d)   # B x 64(from) x 64(to)
+        return logits.flatten(1), self.value(h.mean(1)).squeeze(-1)
+
+
+def build_net(arch="resnet", channels=64, blocks=4, heads=4):
+    if arch == "transformer":
+        return SnakeTransformer(channels, blocks, heads)
+    if arch == "resnet":
+        return SnakeNet(channels, blocks)
+    raise ValueError(f"unknown arch {arch!r} (use 'resnet' or 'transformer')")
+
+
 # --------------------------------------------------------------------------
 # 3. Agent
 # --------------------------------------------------------------------------
 class SnakeAgent:
-    def __init__(self, channels=64, blocks=4, device=None):
+    def __init__(self, channels=64, blocks=4, device=None, arch="resnet", heads=4):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.net = SnakeNet(channels, blocks).to(self.device)
+        self.net = build_net(arch, channels, blocks, heads).to(self.device)
         self.lock = threading.RLock()        # training thread + web server share the net
-        self.meta = {"channels": channels, "blocks": blocks, "train_steps": 0,
-                     "games": 0, "sf_level": 0}
+        self.meta = {"arch": arch, "channels": channels, "blocks": blocks, "heads": heads,
+                     "train_steps": 0, "games": 0, "sf_level": 0, "web_games": 0}
 
     @torch.no_grad()
     def evaluate(self, board):
@@ -168,6 +204,22 @@ class SnakeAgent:
             idx = int(np.random.choice(POLICY_SIZE, p=p))
         return index_to_move(idx, board)
 
+    def predict(self, board, top=8):
+        """Snake's 'thoughts': probability (in %) of every legal move + how well it thinks it is doing."""
+        logits, v = self.evaluate(board)
+        masked = np.where(legal_mask(board), logits, -1e9)
+        p = np.exp(masked - masked.max()); p /= p.sum()
+        rows = {}
+        for m in board.legal_moves:
+            if m.promotion and m.promotion != chess.QUEEN:
+                continue                                         # under-promotions are not in the policy
+            rows[m.uci()] = (float(p[move_to_index(m, board.turn)]) * 100.0, board.san(m))
+        ranked = sorted(rows.items(), key=lambda kv: -kv[1][0])
+        return {"value": v, "win_pct": (v + 1.0) * 50.0,        # expected score of the side to move
+                "turn": "white" if board.turn else "black",
+                "moves": [{"uci": u, "san": s, "pct": round(pc, 2)} for u, (pc, s) in ranked[:top]],
+                "all": {u: round(pc, 3) for u, (pc, _) in ranked}}
+
     # ---- persistence ----
     def save(self, path):
         with self.lock:
@@ -177,7 +229,9 @@ class SnakeAgent:
     def load(cls, path, device=None):
         ck = torch.load(path, map_location="cpu", weights_only=False)
         meta = ck["meta"]
-        agent = cls(meta["channels"], meta["blocks"], device)
+        meta.setdefault("arch", "resnet"); meta.setdefault("heads", 4); meta.setdefault("web_games", 0)
+        agent = cls(meta["channels"], meta["blocks"], device,
+                    arch=meta.get("arch", "resnet"), heads=meta.get("heads", 4))   # old files = resnet
         agent.net.load_state_dict(ck["state_dict"])
         agent.meta = meta
         agent.net.eval()
@@ -209,16 +263,20 @@ _OPENING_KEYS = sorted(((k.split(), v) for k, v in OPENINGS.items()), key=lambda
 
 def identify_game(board):
     """Describe a game from its move stack: opening, phase, material, termination."""
-    replay, sans = chess.Board(), []
+    root = board.root()
+    custom = root.fen() != chess.STARTING_FEN
+    replay, sans = root.copy(), []
     for m in board.move_stack:
         sans.append(replay.san(m)); replay.push(m)
     sans_clean = [s.rstrip("+#") for s in sans]
     opening = "Unknown / out of book"
     for tokens, name in _OPENING_KEYS:
-        if sans_clean[:len(tokens)] == tokens:
+        if not custom and sans_clean[:len(tokens)] == tokens:
             opening = name
             break
-    if not sans:
+    if custom:
+        opening = "Custom position"
+    elif not sans:
         opening = "Starting position"
 
     values = {chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
